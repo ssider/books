@@ -1,0 +1,79 @@
+Envoy调试
+重新编译envoy， 参考 https://github.com/envoyproxy/envoy/blob/master/bazel/README.md 注意，要对envoy进行调试需要添加编译参数
+
+bazel build -c dbg //source/exe:envoy-static
+如果使用clion阅读代码，使用 bazel-cmakelist 把bazel的依赖转化为cmakelist, 供clion索引需要稍微改动一下
+
+<   if FLAGS.c == "dbg":
+<     bazel_args = ['build', '-c', 'dbg']
+<   else:
+<     bazel_args = ['build']
+---
+>   bazel_args = ['build']
+200d196
+<   parser.add_argument('-c', default='fastbuild')
+bazel-cmakelists -c dbg --targets //source/exe::envoy-static
+linux桌面环境调试
+
+
+
+
+
+注意创建的时候需要把 Before launch 里的Build删除target 选择 bazel-out/k8-dbg/bin/source/exe/envoy-static
+
+远程调试使用gdbserver启动
+
+ gdbserver :9999 bazel-bin/source/exe/envoy-static -c test-config/ads.json
+
+ 然后可以用带remote debug功能的IDE进行连接调试
+
+vscode 调试配置参考
+
+
+
+配置istio环境下的envoy的访问，istio环境下，envoy只监听15001端口，然后会分发到其他的Listener进行处理，需要用iptables来把指定流量转发
+
+sudo useradd envoy-client 
+sudo iptables -t nat -I OUTPUT 1 -p tcp -m owner --uid-owner $(whoami) -j REDIRECT --to-port 15001
+在/etc/hosts里配置istio组件和需要访问的服务的ip
+
+10.97.48.207 istio-pilot.istio-system
+10.109.39.54 istio-policy.istio-system
+10.100.72.194 istio-telemetry.istio-system
+10.99.99.24 istio-citadel.istio-system
+10.105.245.110 istio-galley.istio-system
+10.100.92.251 asm-test-http.default
+切换到envoy-client user，直接curl访问asm-test-http.default即可
+
+Istio 调试
+Pilot 调试
+使用源码进行调试, 需要以下配置文件 (从pilot的image里copy出来)
+
+dzdx@macbook  ~  tree /etc/istio 
+/etc/istio
+├── certs
+│   ├── cert-chain.pem
+│   ├── key.pem
+│   └── root-cert.pem
+├── config
+│   ├── mesh
+│   └── meshNetworks
+└── inject
+   └── config
+
+3 directories, 6 files
+配置debug（goland）需要配置 PILOT_CERT_DIR 
+
+
+
+配置集群访问pilot
+
+可以直接访问
+
+修改 svc istio-pilot, 移除selector, 同时把endpoints里的istio-pilot的addresses改为pilot的地址
+
+集群内无法访问pilot(比如云主机k8s访问笔记本内的pilot)
+
+使用ssh port forword把远程的port映射到本地pilot的端口
+ssh -R localhost:15012:localhost:15012 root@remote-host
+重启需要调试的pod，重启后就是连接的新的pilot
